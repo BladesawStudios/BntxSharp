@@ -51,6 +51,16 @@ public sealed class BntxTexture
             return SurfaceLayout.AlignUp(total, (long)SurfaceLayout.GobSize * (1 << BlockHeightLog2));
         }
     }
+    
+    public long CalcLayerLinearSize(int mipLevel) {
+        int widthInBlocks = MipWidthInBlocks(mipLevel);
+        int heightInBlocks = MipHeightInBlocks(mipLevel);
+        int depth = MipDepth(mipLevel);
+        SurfaceFormatInfo info = FormatInfo;
+
+        long layerSize = SurfaceLayout.LinearSize(widthInBlocks, heightInBlocks, depth, info.BytesPerBlock);
+        return layerSize;
+    }
 
     public byte[] GetDeswizzledData(int level = 0, int arrayLevel = 0)
     {
@@ -74,6 +84,47 @@ public sealed class BntxTexture
             tiled, linear, widthInBlocks, heightInBlocks, depth,
             info.BytesPerBlock, MipBlockHeight(level));
 
+        return linear;
+    }
+    
+    public void GetDeswizzledDataForEntireLevel(int level, Span<byte> linear, out long levelSize)
+    {
+        int widthInBlocks = MipWidthInBlocks(level);
+        int heightInBlocks = MipHeightInBlocks(level);
+        int depth = MipDepth(level);
+        SurfaceFormatInfo info = FormatInfo;
+
+        long layerSize = CalcLayerLinearSize(level);
+        levelSize = layerSize * ArrayLength;
+
+        for (int arrayLayer = 0; arrayLayer < ArrayLength; arrayLayer++) {
+            ValidateLevel(level, arrayLayer);
+            ReadOnlySpan<byte> tiled = SliceOf(level, arrayLayer);
+            Span<byte> linearLayer = linear.Slice((int)(layerSize * arrayLayer), (int)layerSize);
+
+            if (TileMode == TileMode.LinearAligned) {
+                tiled.Slice(0, Math.Min(tiled.Length, linearLayer.Length)).CopyTo(linearLayer);
+                continue;
+            }
+
+            BlockLinear.Deswizzle(
+                tiled, linearLayer, widthInBlocks, heightInBlocks, depth,
+                info.BytesPerBlock, MipBlockHeight(level));
+        }
+    }
+    
+    public byte[] GetDeswizzledDataForEntireLevel(int level, out long levelSize)
+    {
+        int widthInBlocks = MipWidthInBlocks(level);
+        int heightInBlocks = MipHeightInBlocks(level);
+        int depth = MipDepth(level);
+        SurfaceFormatInfo info = FormatInfo;
+
+        long layerSize = SurfaceLayout.LinearSize(widthInBlocks, heightInBlocks, depth, info.BytesPerBlock);
+        levelSize = layerSize * ArrayLength;
+        
+        byte[] linear = new byte[levelSize];
+        GetDeswizzledDataForEntireLevel(level, linear, out levelSize);
         return linear;
     }
 
