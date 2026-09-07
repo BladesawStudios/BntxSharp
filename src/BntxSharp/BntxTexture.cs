@@ -71,20 +71,31 @@ public sealed class BntxTexture
         int depth = MipDepth(level);
         SurfaceFormatInfo info = FormatInfo;
 
-        ReadOnlySpan<byte> tiled = SliceOf(level, arrayLevel);
         byte[] linear = new byte[SurfaceLayout.LinearSize(widthInBlocks, heightInBlocks, depth, info.BytesPerBlock)];
+        GetDeswizzledData(linear, level, arrayLevel);
+        return linear;
+    }
+    
+    public void GetDeswizzledData(Span<byte> linear, int level = 0, int arrayLevel = 0)
+    {
+        ValidateLevel(level, arrayLevel);
+
+        int widthInBlocks = MipWidthInBlocks(level);
+        int heightInBlocks = MipHeightInBlocks(level);
+        int depth = MipDepth(level);
+        SurfaceFormatInfo info = FormatInfo;
+
+        ReadOnlySpan<byte> tiled = SliceOf(level, arrayLevel);
 
         if (TileMode == TileMode.LinearAligned)
         {
             tiled.Slice(0, Math.Min(tiled.Length, linear.Length)).CopyTo(linear);
-            return linear;
+            return;
         }
 
         BlockLinear.Deswizzle(
             tiled, linear, widthInBlocks, heightInBlocks, depth,
             info.BytesPerBlock, MipBlockHeight(level));
-
-        return linear;
     }
     
     public void GetDeswizzledDataForEntireLevel(int level, Span<byte> linear, out long levelSize)
