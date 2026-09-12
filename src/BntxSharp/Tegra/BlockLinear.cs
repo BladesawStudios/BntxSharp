@@ -1,9 +1,16 @@
 using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 
 namespace BntxSharp.Tegra;
 
 public static class BlockLinear
 {
+    private const int SectorSize = 16;
+
+    private const int SectorsPerGobRow = SurfaceLayout.GobWidth / SectorSize;
+
     public static void Deswizzle(
         ReadOnlySpan<byte> tiled, Span<byte> linear,
         int widthInBlocks, int heightInBlocks, int depth, int bytesPerBlock, int blockHeight) =>
@@ -43,41 +50,77 @@ public static class BlockLinear
         long blockRowBytes = (long)gobColumnBytes * widthInGobs;
         int blockRows = SurfaceLayout.GobHeight * blockHeight;
         long sliceBytes = tiledSize / depth;
+        int rowBytes = widthInBlocks * bytesPerBlock;
+
+        ref byte sourceBase = ref MemoryMarshal.GetReference(source);
+        ref byte destinationBase = ref MemoryMarshal.GetReference(destination);
 
         for (int z = 0; z < depth; z++)
         {
             long sliceBase = sliceBytes * z;
 
-            for (int y = 0; y < heightInBlocks; y++)
+            for (int gobY = 0; gobY < heightInBlocks; gobY += SurfaceLayout.GobHeight)
             {
-                long rowBase = sliceBase
-                    + (long)(y / blockRows) * blockRowBytes
-                    + (long)(y % blockRows / SurfaceLayout.GobHeight) * SurfaceLayout.GobSize
-                    + (y % SurfaceLayout.GobHeight / 2) * 64
-                    + (y % 2) * 16;
+                long gobRowBase = sliceBase
+                    + (long)(gobY / blockRows) * blockRowBytes
+                    + (long)(gobY % blockRows / SurfaceLayout.GobHeight) * SurfaceLayout.GobSize;
 
-                long linearRow = ((long)z * heightInBlocks + y) * widthInBlocks * bytesPerBlock;
-
-                for (int x = 0; x < widthInBlocks; x++)
+                for (int gobX = 0; gobX < widthInGobs; gobX++)
                 {
-                    int xBytes = x * bytesPerBlock;
+                    long gobBase = gobRowBase + (long)gobX * gobColumnBytes;
+                    int gobXBytes = gobX * SurfaceLayout.GobWidth;
 
-                    long tiledOffset = rowBase
-                        + (long)(xBytes / SurfaceLayout.GobWidth) * gobColumnBytes
-                        + (xBytes % 64 / 32) * 256
-                        + (xBytes % 32 / 16) * 32
-                        + xBytes % 16;
+                    int rows = Math.Min(SurfaceLayout.GobHeight, heightInBlocks - gobY);
+                    for (int y = 0; y < rows; y++)
+                    {
+                        long rowBase = gobBase + (y >> 1) * 64 + (y & 1) * 16;
+                        long linearRow = ((long)z * heightInBlocks + gobY + y) * rowBytes;
 
-                    if (tiledOffset + bytesPerBlock > tiledLength)
-                        continue;
+                        for (int sector = 0; sector < SectorsPerGobRow; sector++)
+                        {
+                            int xBytes = gobXBytes + sector * SectorSize;
+                            if (xBytes >= rowBytes)
+                                break;
 
-                    long linearOffset = linearRow + xBytes;
-                    long from = toLinear ? tiledOffset : linearOffset;
-                    long to = toLinear ? linearOffset : tiledOffset;
+                            long tiledOffset = rowBase + (sector >> 1) * 256 + (sector & 1) * 32;
+                            long linearOffset = linearRow + xBytes;
+                            int length = Math.Min(SectorSize, rowBytes - xBytes);
 
-                    source.Slice((int)from, bytesPerBlock).CopyTo(destination.Slice((int)to, bytesPerBlock));
+                            if (length < SectorSize || tiledOffset + SectorSize > tiledLength)
+                            {
+                                Partial(source, destination, tiledLength, tiledOffset, linearOffset, length, toLinear);
+                                continue;
+                            }
+
+                            long from = toLinear ? tiledOffset : linearOffset;
+                            long to = toLinear ? linearOffset : tiledOffset;
+
+                            Unsafe.WriteUnaligned(
+                                ref Unsafe.Add(ref destinationBase, (nint)to),
+                                Unsafe.ReadUnaligned<Vector128<byte>>(ref Unsafe.Add(ref sourceBase, (nint)from)));
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Transfers fewer than <see cref="SectorSize"/> bytes: a row whose width is not a whole
+    /// number of sectors, or a tiled buffer that stops inside one.
+    /// </summary>
+    private static void Partial(
+        ReadOnlySpan<byte> source, Span<byte> destination, int tiledLength,
+        long tiledOffset, long linearOffset, int length, bool toLinear)
+    {
+        if (tiledOffset >= tiledLength)
+            return;
+
+        length = (int)Math.Min(length, tiledLength - tiledOffset);
+
+        long from = toLinear ? tiledOffset : linearOffset;
+        long to = toLinear ? linearOffset : tiledOffset;
+
+        source.Slice((int)from, length).CopyTo(destination.Slice((int)to, length));
     }
 }
