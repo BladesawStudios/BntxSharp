@@ -1,3 +1,13 @@
+# Notice
+
+BntxSharp is licensed under the GNU Affero General Public Licence, version 3 or later. See [license.md](license.md).
+
+Releases up to and including 1.0.0 were published under the MIT licence, and that licence still applies
+to the code as it was released then, including the two commits contributed by torph while the project
+was MIT-licensed. Its text is kept below as the licence requires.
+
+---
+
 MIT License
 
 Copyright (c) 2026 Aiden A

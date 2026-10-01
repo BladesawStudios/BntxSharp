@@ -11,11 +11,15 @@
 
   <PropertyGroup>
     <PackageId>BntxSharp</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>Aiden A</Authors>
-    <Description>A reader and writer for Nintendo Switch BNTX texture containers, with Tegra X1 block-linear swizzling.</Description>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Description>A reader and writer for Nintendo Switch BNTX texture containers, with Tegra X1 block-linear swizzling, and DDS export and decoding through TexSharp.</Description>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\lib\TexSharp\src\TexSharp\TexSharp.csproj" />
+  </ItemGroup>
 
 </Project>
