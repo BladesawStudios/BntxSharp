@@ -14,7 +14,9 @@ File.WriteAllBytes("texture.dds", tex.ToDds().ToBytes());
 tex.ReplaceFromDds(DdsImage.Parse(File.ReadAllBytes("texture.dds")));
 ```
 
-`ReplaceFromDds` needs the same format and size as the texture. 2D textures and 2D arrays only.
+`ReplaceFromDds` needs the same format as the texture; the new image's size and mip count can differ, and
+the texture is resized to match. `ToDds(editable: true)` expands the small formats (R8, RG8, R5G6B5, RGBA4)
+to RGBA8 for image editors, and `ReplaceFromDds` collapses them again. Single 2D textures only.
 
 ## Licence
 

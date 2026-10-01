@@ -34,6 +34,14 @@ public static class SurfaceLayout
 
     public static int MipSize(int baseSize, int level) => Math.Max(1, baseSize >> level);
 
+    /// <summary>The block height, in GOBs, the Tegra X1 swizzle gives a surface of this height (1 to 16).</summary>
+    public static int BlockHeightMip0(int heightInBlocks)
+    {
+        int height = Math.Max(1, heightInBlocks);
+        int heightAndHalf = height + height / 2;
+        return heightAndHalf >= 128 ? 16 : heightAndHalf >= 64 ? 8 : heightAndHalf >= 32 ? 4 : heightAndHalf >= 16 ? 2 : 1;
+    }
+
     public static int MipBlockHeight(int baseBlockHeight, int mipHeightInBlocks)
     {
         int gobRows = DivideUp(mipHeightInBlocks, GobHeight);

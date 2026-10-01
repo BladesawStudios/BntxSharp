@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
+using BntxSharp.Tegra;
 using TexSharp;
 
 namespace BntxSharp;
 
-/// <summary>Decoding and DDS export for a <see cref="BntxTexture"/>, through TexSharp.</summary>
+/// <summary>Decoding and DDS export and import for a <see cref="BntxTexture"/>, through TexSharp.</summary>
 public static class BntxTextureExtensions
 {
     /// <summary>The TexSharp format for the texture, or false if TexSharp has no equivalent.</summary>
@@ -15,42 +16,112 @@ public static class BntxTextureExtensions
     public static byte[] ToRgba8(this BntxTexture texture, int level = 0, int arrayLevel = 0)
     {
         TextureFormat format = RequireFormat(texture, out _, out bool snorm);
-        int width = Math.Max(1, texture.Width >> level);
-        int height = Math.Max(1, texture.Height >> level);
+        int width = SurfaceLayout.MipSize(texture.Width, level);
+        int height = SurfaceLayout.MipSize(texture.Height, level);
         return TextureDecoder.ToRgba8(format, texture.GetDeswizzledData(level, arrayLevel), width, height, snorm);
     }
 
-    /// <summary>All mips of one array slice as a DDS. The pixel data is passed through untouched.</summary>
-    public static DdsImage ToDds(this BntxTexture texture, int arrayLevel = 0)
+    /// <summary>
+    /// All mips of one array slice as a DDS. The pixel data is passed through untouched, except with
+    /// <paramref name="editable"/>: R8, RG8, R5G6B5 and RGBA4 are then expanded to RGBA8, which image
+    /// editors can open. <see cref="ReplaceFromDds"/> collapses them again.
+    /// </summary>
+    public static DdsImage ToDds(this BntxTexture texture, int arrayLevel = 0, bool editable = false)
     {
         TextureFormat format = RequireFormat(texture, out bool srgb, out bool snorm);
+        bool expand = editable && PixelFormats.CanRoundTripThroughRgba8(format);
 
         List<byte[]> mips = [];
         for (int level = 0; level < texture.MipCount; level++)
-            mips.Add(texture.GetDeswizzledData(level, arrayLevel));
+        {
+            byte[] mip = texture.GetDeswizzledData(level, arrayLevel);
+            if (expand)
+                mip = PixelFormats.ExpandToRgba8(format, mip, SurfaceLayout.MipSize(texture.Width, level) * SurfaceLayout.MipSize(texture.Height, level));
+            mips.Add(mip);
+        }
 
-        return new DdsImage(texture.Width, texture.Height, format, mips, srgb, snorm);
+        return expand
+            ? new DdsImage(texture.Width, texture.Height, TextureFormat.Rgba8, mips)
+            : new DdsImage(texture.Width, texture.Height, format, mips, srgb, snorm);
     }
 
     /// <summary>
-    /// Writes a DDS over one array slice. The DDS has to be the same format and size as the texture and carry
-    /// every mip it has; changing either means building a new texture, which this library doesn't do.
+    /// Replaces the texture's image with a DDS. The DDS has to be the same format; its size and mip count may
+    /// differ from the texture's, and the texture is resized to match. An RGBA8 DDS is accepted for the small
+    /// formats <c>ToDds(editable: true)</c> expands. The pixels are not converted. The texture's sRGB variant
+    /// follows the DDS when the DDS states a colour space (<see cref="DdsImage.ColorSpaceKnown"/>).
     /// </summary>
-    public static void ReplaceFromDds(this BntxTexture texture, DdsImage dds, int arrayLevel = 0)
+    public static void ReplaceFromDds(this BntxTexture texture, DdsImage dds)
     {
         ArgumentNullException.ThrowIfNull(dds);
         TextureFormat format = RequireFormat(texture, out _, out _);
 
-        if (dds.Format != format)
-            throw new ArgumentException($"Texture '{texture.Name}' is {format}, the DDS is {dds.Format}.", nameof(dds));
-        if (dds.Width != texture.Width || dds.Height != texture.Height)
-            throw new ArgumentException(
-                $"Texture '{texture.Name}' is {texture.Width}x{texture.Height}, the DDS is {dds.Width}x{dds.Height}.", nameof(dds));
-        if (dds.Mips.Count < texture.MipCount)
-            throw new ArgumentException($"Texture '{texture.Name}' has {texture.MipCount} mips, the DDS has {dds.Mips.Count}.", nameof(dds));
+        if (texture.ArrayLength != 1)
+            throw new NotSupportedException($"Texture '{texture.Name}' is an array of {texture.ArrayLength}; only single textures can be replaced.");
+        if (texture.TileMode != TileMode.Default)
+            throw new NotSupportedException($"Texture '{texture.Name}' is linear (pitch) rather than block-linear, which can't be replaced yet.");
 
-        for (int level = 0; level < texture.MipCount; level++)
-            texture.SetDeswizzledData(dds.Mips[level], level, arrayLevel);
+        if (dds.Format == TextureFormat.Rgba8 && format != TextureFormat.Rgba8 && PixelFormats.CanRoundTripThroughRgba8(format))
+        {
+            var collapsed = new List<byte[]>();
+            for (int level = 0; level < dds.Mips.Count; level++)
+                collapsed.Add(PixelFormats.CollapseRgba8(format, dds.Mips[level], SurfaceLayout.MipSize(dds.Width, level) * SurfaceLayout.MipSize(dds.Height, level)));
+            dds = new DdsImage(dds.Width, dds.Height, format, collapsed);
+        }
+
+        if (dds.Format != format)
+            throw new ArgumentException($"Format mismatch: texture '{texture.Name}' is {format} but the DDS is {dds.Format}. Re-export the DDS as {format}.", nameof(dds));
+
+        SurfaceFormatInfo info = texture.FormatInfo;
+        int alignment = (int)Math.Max(1u, texture.Alignment);
+        int baseBlockHeight = SurfaceLayout.BlockHeightMip0(SurfaceLayout.DivideUp(dds.Height, info.BlockHeight));
+
+        int mipCount = dds.Mips.Count;
+        long[] offsets = new long[mipCount];
+        long[] tiledSizes = new long[mipCount];
+        int[] blockHeights = new int[mipCount];
+        long cursor = 0;
+        for (int level = 0; level < mipCount; level++)
+        {
+            int widthInBlocks = SurfaceLayout.DivideUp(SurfaceLayout.MipSize(dds.Width, level), info.BlockWidth);
+            int heightInBlocks = SurfaceLayout.DivideUp(SurfaceLayout.MipSize(dds.Height, level), info.BlockHeight);
+            blockHeights[level] = SurfaceLayout.MipBlockHeight(baseBlockHeight, heightInBlocks);
+            tiledSizes[level] = SurfaceLayout.TiledSize(widthInBlocks, heightInBlocks, 1, info.BytesPerBlock, blockHeights[level]);
+
+            cursor = SurfaceLayout.AlignUp(cursor, alignment);
+            offsets[level] = cursor;
+            cursor += tiledSizes[level];
+        }
+
+        byte[] data = new byte[cursor];
+        for (int level = 0; level < mipCount; level++)
+        {
+            int widthInBlocks = SurfaceLayout.DivideUp(SurfaceLayout.MipSize(dds.Width, level), info.BlockWidth);
+            int heightInBlocks = SurfaceLayout.DivideUp(SurfaceLayout.MipSize(dds.Height, level), info.BlockHeight);
+            BlockLinear.Swizzle(
+                dds.Mips[level], data.AsSpan((int)offsets[level], (int)tiledSizes[level]),
+                widthInBlocks, heightInBlocks, 1, info.BytesPerBlock, blockHeights[level]);
+        }
+
+        texture.Width = dds.Width;
+        texture.Height = dds.Height;
+        texture.Data = data;
+        texture.MipOffsets.Clear();
+        texture.MipOffsets.AddRange(offsets);
+
+        int log2 = 0;
+        while (1 << log2 < baseBlockHeight) log2++;
+        texture.TextureLayout = (texture.TextureLayout & ~7u) | (uint)log2;
+
+        // A DDS that can't state a colour space (BC1 to BC5 files) leaves the texture's as it is.
+        if (dds.ColorSpaceKnown)
+        {
+            bool currentSrgb = SurfaceFormatInfo.IsSrgb(texture.Format);
+            if (dds.IsSrgb && !currentSrgb)
+                texture.Format = SurfaceFormatInfo.WithVariant(texture.Format, SurfaceFormatVariant.Srgb);
+            else if (!dds.IsSrgb && currentSrgb)
+                texture.Format = SurfaceFormatInfo.WithVariant(texture.Format, SurfaceFormatVariant.UNorm);
+        }
     }
 
     private static TextureFormat RequireFormat(BntxTexture texture, out bool srgb, out bool snorm)
