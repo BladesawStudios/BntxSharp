@@ -8,7 +8,9 @@ With [TexSharp](../TexSharp), a texture can be decoded or handed to an image edi
 ```csharp
 BntxTexture tex = BntxFile.LoadFile("texture.bntx").Textures[0];
 
-byte[] rgba = tex.ToRgba8();                         // width * height * 4, mip 0
+byte[] rgba = tex.ToRgba8();                         // width * height * 4, mip 0, channels as stored
+byte[] seen = tex.Render();                          // with the texture's channel swizzle applied
+File.WriteAllBytes("texture.png", tex.ToPng());
 File.WriteAllBytes("texture.dds", tex.ToDds().ToBytes());
 
 tex.ReplaceFromDds(DdsImage.Parse(File.ReadAllBytes("texture.dds")));

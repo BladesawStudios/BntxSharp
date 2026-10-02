@@ -21,6 +21,28 @@ public static class BntxTextureExtensions
         return TextureDecoder.ToRgba8(format, texture.GetDeswizzledData(level, arrayLevel), width, height, snorm);
     }
 
+    /// <summary>The channel swizzle stored with the texture, which says how its channels are meant to be read.</summary>
+    public static ChannelMap GetChannelMap(this BntxTexture texture)
+        => texture.ChannelTypes.Length >= 4
+            ? ChannelMap.FromBntx((byte)texture.ChannelTypes[0], (byte)texture.ChannelTypes[1], (byte)texture.ChannelTypes[2], (byte)texture.ChannelTypes[3])
+            : ChannelMap.Identity;
+
+    /// <summary>
+    /// <see cref="ToRgba8"/> as the texture is meant to be seen: its channel swizzle applied, and for a BC5 normal map
+    /// the blue channel rebuilt.
+    /// </summary>
+    public static byte[] Render(this BntxTexture texture, int level = 0, int arrayLevel = 0)
+    {
+        TextureFormat format = RequireFormat(texture, out _, out bool snorm);
+        int width = SurfaceLayout.MipSize(texture.Width, level);
+        int height = SurfaceLayout.MipSize(texture.Height, level);
+        return TextureDecoder.Render(format, texture.GetDeswizzledData(level, arrayLevel), width, height, texture.GetChannelMap(), snorm);
+    }
+
+    /// <summary>A PNG of <see cref="Render"/>.</summary>
+    public static byte[] ToPng(this BntxTexture texture, int level = 0, int arrayLevel = 0)
+        => PngWriter.Encode(texture.Render(level, arrayLevel), SurfaceLayout.MipSize(texture.Width, level), SurfaceLayout.MipSize(texture.Height, level));
+
     /// <summary>
     /// All mips of one array slice as a DDS. The pixel data is passed through untouched, except with
     /// <paramref name="editable"/>: R8, RG8, R5G6B5 and RGBA4 are then expanded to RGBA8, which image
