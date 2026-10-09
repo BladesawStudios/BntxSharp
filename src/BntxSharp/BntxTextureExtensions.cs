@@ -146,6 +146,47 @@ public static class BntxTextureExtensions
         }
     }
 
+    /// <summary>
+    /// Replaces one layer of an array texture with a DDS, leaving the other layers as they are. Every layer shares the
+    /// texture's size, format and mip count. A DDS that differs in any of them is converted to fit (resized, its mips
+    /// rebuilt, re-encoded) unless <paramref name="convert"/> is false, in which case it is refused. An RGBA8 DDS is
+    /// accepted for the small formats <c>ToDds(editable: true)</c> expands without counting as a conversion.
+    /// Returns what was changed to make the DDS fit, in words; empty if it fitted as it was.
+    /// </summary>
+    public static IReadOnlyList<string> ReplaceLayerFromDds(this BntxTexture texture, DdsImage dds, int arrayLevel, bool convert = true)
+    {
+        ArgumentNullException.ThrowIfNull(dds);
+        TextureFormat format = RequireFormat(texture, out bool srgb, out bool snorm);
+
+        int layers = Math.Max(1, texture.ArrayLength);
+        if (arrayLevel < 0 || arrayLevel >= layers)
+            throw new ArgumentOutOfRangeException(nameof(arrayLevel), arrayLevel, $"Texture '{texture.Name}' has {layers} layer(s).");
+
+        if (dds.Format == TextureFormat.Rgba8 && format != TextureFormat.Rgba8 && PixelFormats.CanRoundTripThroughRgba8(format)
+            && dds.Width == texture.Width && dds.Height == texture.Height && dds.Mips.Count == texture.MipCount)
+        {
+            var collapsed = new List<byte[]>();
+            for (int level = 0; level < dds.Mips.Count; level++)
+                collapsed.Add(PixelFormats.CollapseRgba8(format, dds.Mips[level], SurfaceLayout.MipSize(dds.Width, level) * SurfaceLayout.MipSize(dds.Height, level)));
+            dds = new DdsImage(dds.Width, dds.Height, format, collapsed);
+        }
+
+        List<string> changes = TextureConverter.Differences(dds, format, texture.Width, texture.Height, texture.MipCount);
+        IReadOnlyList<byte[]> mips = dds.Mips;
+        if (changes.Count > 0)
+        {
+            if (!convert)
+                throw new ArgumentException(
+                    $"A layer has to match the texture: '{texture.Name}' is {texture.Width}x{texture.Height} {format} with {texture.MipCount} mip(s), " +
+                    $"but the DDS is {dds.Width}x{dds.Height} {dds.Format} with {dds.Mips.Count}.", nameof(dds));
+            mips = TextureConverter.Convert(dds, format, texture.Width, texture.Height, texture.MipCount, srgb, snorm);
+        }
+
+        for (int level = 0; level < mips.Count; level++)
+            texture.SetDeswizzledData(mips[level], level, arrayLevel);
+        return changes;
+    }
+
     private static TextureFormat RequireFormat(BntxTexture texture, out bool srgb, out bool snorm)
     {
         if (texture.Depth != 1 || texture.SurfaceDim is SurfaceDim.Dim3D or SurfaceDim.DimCube or SurfaceDim.DimCubeArray)
