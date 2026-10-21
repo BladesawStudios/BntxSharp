@@ -43,11 +43,8 @@ public static class BntxTextureExtensions
     public static byte[] ToPng(this BntxTexture texture, int level = 0, int arrayLevel = 0)
         => PngWriter.Encode(texture.Render(level, arrayLevel), SurfaceLayout.MipSize(texture.Width, level), SurfaceLayout.MipSize(texture.Height, level));
 
-    /// <summary>
-    /// All mips of one array slice as a DDS. The pixel data is passed through untouched, except with
-    /// <paramref name="editable"/>: R8, RG8, R5G6B5 and RGBA4 are then expanded to RGBA8, which image
-    /// editors can open. <see cref="ReplaceFromDds"/> collapses them again.
-    /// </summary>
+    // All mips of one array slice as a DDS, the pixel data untouched unless editable expands the small packed
+    // formats to RGBA8 (which ReplaceFromDds collapses again).
     public static DdsImage ToDds(this BntxTexture texture, int arrayLevel = 0, bool editable = false)
     {
         TextureFormat format = RequireFormat(texture, out bool srgb, out bool snorm);

@@ -56,14 +56,16 @@ public readonly struct SurfaceFormatInfo
         [0x0E] = new(1, 1, 4),    // R10_G10_B10_A2
         [0x0F] = new(1, 1, 4),    // R11_G11_B10
         [0x10] = new(1, 1, 4),    // B10_G11_R11
-        [0x11] = new(1, 1, 4),    // R16_G16
-        [0x12] = new(1, 1, 4),    // R24_G8
-        [0x13] = new(1, 1, 4),    // R32
-        [0x14] = new(1, 1, 8),    // R16_G16_B16_A16
-        [0x15] = new(1, 1, 8),    // R32_G8_X24
-        [0x16] = new(1, 1, 8),    // R32_G32
-        [0x17] = new(1, 1, 12),   // R32_G32_B32
-        [0x18] = new(1, 1, 16),   // R32_G32_B32_A32
+        // Layouts follow nn::gfx's ChannelFormat order. No texture of layout 0x11 has been seen; it is sized as its neighbours.
+        [0x11] = new(1, 1, 4),
+        [0x12] = new(1, 1, 4),    // R16_G16
+        [0x13] = new(1, 1, 4),    // R24_G8
+        [0x14] = new(1, 1, 4),    // R32
+        [0x15] = new(1, 1, 8),    // R16_G16_B16_A16
+        [0x16] = new(1, 1, 8),    // R32_G8_X24
+        [0x17] = new(1, 1, 8),    // R32_G32
+        [0x18] = new(1, 1, 12),   // R32_G32_B32
+        [0x19] = new(1, 1, 16),   // R32_G32_B32_A32
 
         [0x1A] = new(4, 4, 8),    // BC1
         [0x1B] = new(4, 4, 16),   // BC2
