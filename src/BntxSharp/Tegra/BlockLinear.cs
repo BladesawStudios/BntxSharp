@@ -13,21 +13,26 @@ public static class BlockLinear
 
     public static void Deswizzle(
         ReadOnlySpan<byte> tiled, Span<byte> linear,
-        int widthInBlocks, int heightInBlocks, int depth, int bytesPerBlock, int blockHeight) =>
+        int widthInBlocks, int heightInBlocks, int depth, int bytesPerBlock, int blockHeight,
+        GobLayout layout = GobLayout.TegraX1) =>
         Transfer(tiled, linear, tiled.Length, widthInBlocks, heightInBlocks, depth,
-            bytesPerBlock, blockHeight, toLinear: true);
+            bytesPerBlock, blockHeight, layout, toLinear: true);
 
     public static void Swizzle(
         ReadOnlySpan<byte> linear, Span<byte> tiled,
-        int widthInBlocks, int heightInBlocks, int depth, int bytesPerBlock, int blockHeight) =>
+        int widthInBlocks, int heightInBlocks, int depth, int bytesPerBlock, int blockHeight,
+        GobLayout layout = GobLayout.TegraX1) =>
         Transfer(linear, tiled, tiled.Length, widthInBlocks, heightInBlocks, depth,
-            bytesPerBlock, blockHeight, toLinear: false);
+            bytesPerBlock, blockHeight, layout, toLinear: false);
 
     private static void Transfer(
         ReadOnlySpan<byte> source, Span<byte> destination, int tiledLength,
         int widthInBlocks, int heightInBlocks, int depth, int bytesPerBlock, int blockHeight,
-        bool toLinear)
+        GobLayout layout, bool toLinear)
     {
+        if (layout is not (GobLayout.TegraX1 or GobLayout.Switch2))
+            throw new ArgumentOutOfRangeException(nameof(layout));
+
         if (widthInBlocks <= 0 || heightInBlocks <= 0)
             throw new ArgumentOutOfRangeException(nameof(widthInBlocks), "Surface dimensions must be positive.");
         if (bytesPerBlock <= 0)
@@ -73,7 +78,7 @@ public static class BlockLinear
                     int rows = Math.Min(SurfaceLayout.GobHeight, heightInBlocks - gobY);
                     for (int y = 0; y < rows; y++)
                     {
-                        long rowBase = gobBase + (y >> 1) * 64 + (y & 1) * 16;
+                        long rowBase = gobBase + RowOffset(y, layout);
                         long linearRow = ((long)z * heightInBlocks + gobY + y) * rowBytes;
 
                         for (int sector = 0; sector < SectorsPerGobRow; sector++)
@@ -82,7 +87,7 @@ public static class BlockLinear
                             if (xBytes >= rowBytes)
                                 break;
 
-                            long tiledOffset = rowBase + (sector >> 1) * 256 + (sector & 1) * 32;
+                            long tiledOffset = rowBase + SectorOffset(sector, layout);
                             long linearOffset = linearRow + xBytes;
                             int length = Math.Min(SectorSize, rowBytes - xBytes);
 
@@ -104,6 +109,14 @@ public static class BlockLinear
             }
         }
     }
+
+    // Where a row (0-7) and a sector column (0-3) start inside a GOB; see GobLayout.
+    private static int RowOffset(int y, GobLayout layout) => layout == GobLayout.Switch2
+        ? (y >> 2) * 128 + ((y >> 1) & 1) * 32 + (y & 1) * 16
+        : (y >> 1) * 64 + (y & 1) * 16;
+
+    private static int SectorOffset(int sector, GobLayout layout) =>
+        (sector >> 1) * 256 + (sector & 1) * (layout == GobLayout.Switch2 ? 64 : 32);
 
     /// <summary>
     /// Transfers fewer than <see cref="SectorSize"/> bytes: a row whose width is not a whole
