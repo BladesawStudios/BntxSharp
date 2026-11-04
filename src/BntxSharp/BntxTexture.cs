@@ -23,6 +23,9 @@ public sealed class BntxTexture
     public uint Alignment { get; set; } = 0x200;
     public ChannelType[] ChannelTypes { get; set; } = [ChannelType.Red, ChannelType.Green, ChannelType.Blue, ChannelType.Alpha];
     public SurfaceDim SurfaceDim { get; set; } = SurfaceDim.Dim2D;
+
+    // No field in the file says which order Data's GOBs use, so whoever knows the game sets it.
+    public GobLayout GobLayout { get; set; } = GobLayout.TegraX1;
     public byte[] Data { get; set; } = [];
     public List<long> MipOffsets { get; } = [];
     public int MipCount => MipOffsets.Count;
@@ -95,7 +98,7 @@ public sealed class BntxTexture
 
         BlockLinear.Deswizzle(
             tiled, linear, widthInBlocks, heightInBlocks, depth,
-            info.BytesPerBlock, MipBlockHeight(level));
+            info.BytesPerBlock, MipBlockHeight(level), GobLayout);
     }
     
     public void GetDeswizzledDataForEntireLevel(int level, Span<byte> linear, out long levelSize)
@@ -120,7 +123,7 @@ public sealed class BntxTexture
 
             BlockLinear.Deswizzle(
                 tiled, linearLayer, widthInBlocks, heightInBlocks, depth,
-                info.BytesPerBlock, MipBlockHeight(level));
+                info.BytesPerBlock, MipBlockHeight(level), GobLayout);
         }
     }
     
@@ -163,7 +166,7 @@ public sealed class BntxTexture
 
         BlockLinear.Swizzle(
             linear, tiled, widthInBlocks, heightInBlocks, depth,
-            info.BytesPerBlock, MipBlockHeight(level));
+            info.BytesPerBlock, MipBlockHeight(level), GobLayout);
     }
 
     private Span<byte> SliceOf(int level, int arrayLevel)

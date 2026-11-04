@@ -119,7 +119,7 @@ public static class BntxTextureExtensions
             int heightInBlocks = SurfaceLayout.DivideUp(SurfaceLayout.MipSize(dds.Height, level), info.BlockHeight);
             BlockLinear.Swizzle(
                 dds.Mips[level], data.AsSpan((int)offsets[level], (int)tiledSizes[level]),
-                widthInBlocks, heightInBlocks, 1, info.BytesPerBlock, blockHeights[level]);
+                widthInBlocks, heightInBlocks, 1, info.BytesPerBlock, blockHeights[level], texture.GobLayout);
         }
 
         texture.Width = dds.Width;
