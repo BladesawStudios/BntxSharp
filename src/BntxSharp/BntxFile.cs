@@ -21,11 +21,17 @@ public sealed class BntxFile
     private const int BlockHeaderSize = 0x10;
     private const int UserDataEntrySize = 0x40;
     private const int DictionaryNodeSize = 0x10;
+    private const string SwitchTag = "NX  ";
+    private const string Switch2Tag = "Ounc";
     public string Name { get; set; } = "textures";
     public uint Version { get; set; } = 0x0004_0000;
     public byte AlignmentShift { get; set; } = 12;
     public byte TargetAddressSize { get; set; } = 64;
     public ushort Flag { get; set; }
+
+    /// <summary>The console the file is for. Loading sets it and each texture's <see cref="BntxTexture.GobLayout"/> from the file; saving writes its tag.</summary>
+    public BntxPlatform Platform { get; set; } = BntxPlatform.Switch;
+
     public List<BntxTexture> Textures { get; } = [];
 
     public static BntxFile Load(ReadOnlySpan<byte> data)
@@ -108,8 +114,12 @@ public sealed class BntxFile
 
         Name = ReadStringAt(data, (long)fileNameOffset - 2);
 
-        if (!Matches(data, ContainerOffset, "NX  "))
-            throw new InvalidDataException("Unsupported BNTX: expected an 'NX  ' texture container.");
+        if (Matches(data, ContainerOffset, SwitchTag)) Platform = BntxPlatform.Switch;
+        else if (Matches(data, ContainerOffset, Switch2Tag)) Platform = BntxPlatform.Switch2;
+        else
+            throw new InvalidDataException(
+                $"Unsupported BNTX: expected an '{SwitchTag}' or '{Switch2Tag}' texture container, " +
+                $"found '{Encoding.ASCII.GetString(data.Slice(ContainerOffset, 4))}'.");
 
         int count = (int)ReadU32(data, ContainerOffset + 0x04);
         long infoPointers = (long)ReadU64(data, ContainerOffset + 0x08);
@@ -118,7 +128,9 @@ public sealed class BntxFile
         for (int i = 0; i < count; i++)
         {
             long position = (long)ReadU64(data, infoPointers + i * 8);
-            Textures.Add(ReadTexture(data, position));
+            BntxTexture texture = ReadTexture(data, position);
+            texture.GobLayout = Platform == BntxPlatform.Switch2 ? GobLayout.Switch2 : GobLayout.TegraX1;
+            Textures.Add(texture);
         }
     }
 
@@ -460,7 +472,7 @@ public sealed class BntxFile
         WriteU32(output, 0x18, (uint)layout.RelocationOffset);
         WriteU32(output, 0x1C, (uint)layout.FileSize);
 
-        "NX  "u8.CopyTo(output.Slice(ContainerOffset));
+        Encoding.ASCII.GetBytes(Platform == BntxPlatform.Switch2 ? Switch2Tag : SwitchTag).CopyTo(output.Slice(ContainerOffset));
         WriteU32(output, ContainerOffset + 0x04, (uint)count);
         WriteU64(output, ContainerOffset + 0x08, (ulong)InfoPointerOffset);
         WriteU64(output, ContainerOffset + 0x10, (ulong)layout.DataBlock);

@@ -129,6 +129,16 @@ public enum SurfaceFormatVariant : byte
     UFloat = 0x0A,
 }
 
+/// <summary>The console a file was built for, as named by the 4-byte tag at the start of its texture container.</summary>
+public enum BntxPlatform
+{
+    /// <summary>Nintendo Switch, tagged <c>NX  </c>.</summary>
+    Switch,
+
+    /// <summary>Nintendo Switch 2, tagged <c>Ounc</c>.</summary>
+    Switch2,
+}
+
 public enum TileMode : ushort
 {
     Default = 0,

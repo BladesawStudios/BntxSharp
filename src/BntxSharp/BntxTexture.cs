@@ -24,7 +24,7 @@ public sealed class BntxTexture
     public ChannelType[] ChannelTypes { get; set; } = [ChannelType.Red, ChannelType.Green, ChannelType.Blue, ChannelType.Alpha];
     public SurfaceDim SurfaceDim { get; set; } = SurfaceDim.Dim2D;
 
-    // No field in the file says which order Data's GOBs use, so whoever knows the game sets it.
+    // The order Data's GOBs use. Loading a file sets it from the file's platform tag.
     public GobLayout GobLayout { get; set; } = GobLayout.TegraX1;
     public byte[] Data { get; set; } = [];
     public List<long> MipOffsets { get; } = [];
